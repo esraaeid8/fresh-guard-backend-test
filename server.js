@@ -4,7 +4,6 @@ require("dotenv").config();
 const express = require("express");
 const multer = require("multer");
 const path = require("path");
-const ingestRoutes = require("./routes/ingest");
 const supervisorRoutes = require("./routes/supervisor");
 const qualityRoutes = require("./routes/quality");
 
@@ -22,8 +21,6 @@ app.get("/", (req, res) => {
     res.send("FreshGuard API is running!");
 });
 
-// ربط مسارات استقبال الفحوصات
-app.use("/api/ingest", ingestRoutes);
 // ربط مسارات المشرف ومدير الجودة للموبايل
 app.use("/api/supervisor", supervisorRoutes);
 app.use("/api/quality", qualityRoutes);

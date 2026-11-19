@@ -1,75 +1,48 @@
-function parsePagination(query) {
-  const limit = Math.min(Math.max(parseInt(query.limit, 10) || 20, 1), 100);
-  const offset = Math.max(parseInt(query.offset, 10) || 0, 0);
-  return { limit, offset };
+const queries = require('../db/queries');
+const { AppError, dateText, positiveInteger } = require('../middleware/validate');
+const {
+  readPage, readFilters, withImageUrl, listResponse
+} = require('../utils/mobile');
+
+// GET /api/supervisor/inspections?from&to&product_type&line_id&limit&offset
+function listInspections(req, res) {
+  const filters = readFilters(req);
+  const { limit, offset } = readPage(req);
+  const { rows, total } = queries.getInspectionsPage({ ...filters, limit, offset });
+  res.json(listResponse(rows.map((row) => withImageUrl(req, row)), total, limit, offset));
 }
 
-function buildImageUrl(req, imagePath) {
-  if (!imagePath) return null;
-  if (/^https?:\/\//i.test(imagePath)) return imagePath;
-  const normalized = String(imagePath).replace(/^\/+/, "");
-  const cleanPath = normalized.startsWith("uploads/")
-    ? normalized
-    : `uploads/${normalized}`;
-  return `${req.protocol}://${req.get("host")}/${cleanPath}`;
-}
-
-function getInspections(req, res) {
-  const { limit, offset } = parsePagination(req.query);
-  const { from, to, product_type, line_id } = req.query;
-
-  const items = [];
-  const formatted = items.map((item) => ({
-    ...item,
-    image_url: buildImageUrl(req, item.image_path || item.image_url),
-  }));
-
+// GET /api/supervisor/current-batch?line_id
+function currentBatch(req, res) {
+  const lineId = positiveInteger(req.query.line_id, 'line_id', true);
+  const batch = queries.getOpenBatch(lineId);
+  if (!batch) {
+    return res.json({ batch: null, total: 0, good: 0, defective: 0, defect_rate: 0 });
+  }
+  const stats = queries.getBatchInspectionStats(batch.id);
+  const total = stats.total || 0;
+  const defective = stats.defective || 0;
   res.json({
-    data: formatted.slice(offset, offset + limit),
-    total: formatted.length,
-    filters: {
-      from: from || null,
-      to: to || null,
-      product_type: product_type || null,
-      line_id: line_id || null,
-    },
-    limit,
-    offset,
+    batch,
+    total,
+    good: stats.good || 0,
+    defective,
+    defect_rate: total ? defective / total : 0
   });
 }
 
-function getCurrentBatch(req, res) {
-  const { line_id } = req.query;
-
-  res.json({
-    data: null,
-    total: 0,
-    batch: null,
-    line_id: line_id || null,
-    good: 0,
-    defective: 0,
-    defect_rate: 0,
+// GET /api/supervisor/alerts?unread=true&since=<time>&limit&offset
+function listAlerts(req, res) {
+  const { unread } = req.query;
+  if (unread !== undefined && !['true', 'false'].includes(unread)) {
+    throw new AppError(400, 'unread must be true or false');
+  }
+  const since = dateText(req.query.since, 'since', true);
+  const { limit, offset } = readPage(req);
+  const { rows, total } = queries.getAlertsPage({
+    unread: unread === 'true', since, limit, offset
   });
+  res.json(listResponse(rows, total, limit, offset));
 }
 
-function getAlerts(req, res) {
-  const { limit, offset } = parsePagination(req.query);
-  const { unread, since } = req.query;
-
-  const items = [];
-
-  res.json({
-    data: items.slice(offset, offset + limit),
-    total: items.length,
-    unread: unread !== undefined ? unread === "true" : null,
-    since: since || null,
-    limit,
-    offset,
-  });
-}
-
-module.exports = {
-  getInspections,
-  getCurrentBatch,
-  getAlerts,
-};
+module.exports = { listInspections, currentBatch, listAlerts };
